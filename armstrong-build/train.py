@@ -11,12 +11,12 @@ from keras.optimizers import Adam
 import os
 
 # ANSI escape color codes
-CYAN = '\033[96m'
-GREEN = '\033[92m'
+CYAN = '\e[0;31m'
+GREEN = '\e[0;31m'
 YELLOW = '\033[93m'
 MAGENTA = '\033[95m'
-RESET = '\033[0m'
-BOLD = '\033[1m'
+RESET = '\e[0;31m'
+BOLD = '\e[0;31m'
 
 def get_notes(directory="./jazz_and_stuff", train=True):
     print(f"{CYAN}[INFO]{RESET} Extracting notes and chords from MIDI files...")
@@ -96,10 +96,12 @@ def layer_model(network_input, n_vocab):
     model.add(LSTM(512, input_shape=(network_input.shape[1], network_input.shape[2]),
                    recurrent_dropout=0.5, return_sequences=True))
     model.add(LSTM(512, return_sequences=True, recurrent_dropout=0.3))
-    model.add(LSTM(512))
+    x = LSTM(512, return_sequences=True, recurrent_dropout=0.3)
+    model.add(LSTM(512))(x)#adding residual connection
     model.add(BatchNorm())
     model.add(Dropout(0.3))
     model.add(Dense(256))
+    model.add(Activation('relu'))
     model.add(BatchNorm())
     model.add(Dropout(0.3))
     model.add(Dense(n_vocab))
@@ -125,7 +127,7 @@ def train(model, network_input, network_output, finetune=False):
 
 def train_network():
     print(f"{MAGENTA}+=======================================+{RESET}")
-    print(f"{MAGENTA}|  Starting Armstrong Training Pipeline  |{RESET}")
+    print(f"{MAGENTA}|  Starting Armstrong Training Pipeline |{RESET}")
     print(f"{MAGENTA}+=======================================+{RESET}")
     notes = get_notes()
     n_vocab = len(set(notes))
