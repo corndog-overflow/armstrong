@@ -10,6 +10,7 @@ from keras.optimizers import Adam
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint
 import tensorflow as tf
+from fractions import Fraction
 
 np.random.seed(42)
 
@@ -159,7 +160,7 @@ def create_midi(prediction_output, idx):
         if '_' not in pattern:
             continue
         pitch_part, dur_part = pattern.split('_')
-        dur = float(dur_part)
+        dur = float(Fraction(dur_part))
         try:
             if '.' in pitch_part or pitch_part.isdigit():
                 notes_in_chord = pitch_part.split('.')
