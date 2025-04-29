@@ -9,6 +9,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from music21 import converter, instrument, note, chord, stream, duration
 from fractions import Fraction
+from collections import Counter
 
 np.random.seed(42)
 torch.manual_seed(42)
@@ -32,6 +33,7 @@ class TransformerModel(nn.Module):
     def __init__(self, vocab_size, d_model=256, nhead=8, num_layers=4):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
+        self.embedding_dropout = nn.Dropout(0.1)
         self.pos_encoder = PositionalEncoding(d_model)
         encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
@@ -39,6 +41,7 @@ class TransformerModel(nn.Module):
 
     def forward(self, x):
         x = self.embedding(x)
+        x = self.embedding_dropout(x)
         x = self.pos_encoder(x)
         x = self.transformer(x)
         return self.fc(x)
@@ -59,6 +62,9 @@ class MIDIDataset(Dataset):
         y = torch.tensor([self.token_to_int[n] for n in seq_out], dtype=torch.long)
         return x, y
 
+def discretize_duration(dur):
+    return round(float(dur) * 8) / 8
+
 def get_note_rhythm_tokens():
     print("[INFO] Extracting pitch-duration tokens...")
     tokens = []
@@ -73,9 +79,10 @@ def get_note_rhythm_tokens():
         for element in notes_to_parse:
             dur = element.quarterLength
             try:
-                dur_str = str(Fraction(dur))
+                dur = discretize_duration(dur)
+                dur_str = str(Fraction(dur).limit_denominator(8))
             except:
-                continue  # 跳过非法节拍
+                continue
 
             if isinstance(element, note.Note):
                 tokens.append(f"{element.pitch}_{dur_str}")
@@ -83,11 +90,17 @@ def get_note_rhythm_tokens():
                 chord_token = '.'.join(str(n) for n in element.normalOrder)
                 tokens.append(f"{chord_token}_{dur_str}")
 
+    counter = Counter(tokens)
+    filtered_tokens = [t for t in tokens if counter[t] >= 5]
+
+    print(f"[INFO] Original vocab size: {len(set(tokens))}")
+    print(f"[INFO] Filtered vocab size: {len(set(filtered_tokens))}")
+
     os.makedirs('./data', exist_ok=True)
     with open('./data/tokens', 'wb') as f:
-        pickle.dump(tokens, f)
+        pickle.dump(filtered_tokens, f)
 
-    return tokens
+    return filtered_tokens
 
 def train_network():
     tokens = get_note_rhythm_tokens()
@@ -110,7 +123,7 @@ def train_network():
         print(f"[INFO] Using DataParallel with {num_gpus} GPUs.")
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=2e-3)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     os.makedirs('./weights', exist_ok=True)
 
@@ -119,7 +132,7 @@ def train_network():
         total_loss = 0
         for x, y in loader:
             x, y = x.to(device), y.to(device)
-            out = model(x)  # [B, L, vocab]
+            out = model(x)
             loss = criterion(out.view(-1, out.size(-1)), y.view(-1))
             optimizer.zero_grad()
             loss.backward()
@@ -140,8 +153,8 @@ def sample_with_temperature(logits, temperature=1.0):
     idx = torch.multinomial(probs, num_samples=1)
     return idx.item()
 
-def generate_music():
-    print("[INFO] Generating music...")
+def generate_music(temperature=1.0):
+    print(f"[INFO] Generating music with temperature={temperature}")
     checkpoint = torch.load(sorted(glob.glob("./weights/epoch_*.pth"))[-1], map_location=device)
     token_to_int = checkpoint['token_to_int']
     int_to_token = checkpoint['int_to_token']
@@ -154,12 +167,26 @@ def generate_music():
     start_idx = np.random.randint(0, len(token_to_int) - 100)
     pattern = list(token_to_int.values())[start_idx:start_idx + 100]
     prediction_output = []
+    repeat_count = 0
+    last_token = None
 
     for note_index in range(500):
         input_seq = torch.tensor(pattern, dtype=torch.long).unsqueeze(0).to(device)
         with torch.no_grad():
-            prediction = model(input_seq)  # [1, L, vocab]
-        idx = sample_with_temperature(prediction[0, -1], temperature=1.0)
+            prediction = model(input_seq)
+        logits = prediction[0, -1]
+        idx = sample_with_temperature(logits, temperature)
+
+        if idx == last_token:
+            repeat_count += 1
+            if repeat_count >= 3:
+                logits[idx] = -float('inf')
+                idx = sample_with_temperature(logits, temperature)
+                repeat_count = 0
+        else:
+            repeat_count = 0
+            last_token = idx
+
         result = int_to_token[idx]
         prediction_output.append(result)
         pattern.append(idx)
@@ -211,16 +238,15 @@ def create_midi(prediction_output):
 def main():
     parser = argparse.ArgumentParser(description="Torch Transformer Music Generator")
     parser.add_argument('--mode', type=str, choices=['train', 'generate'], required=True)
+    parser.add_argument('--temp', type=float, default=1.0, help="Sampling temperature (default=1.0)")
     args = parser.parse_args()
 
     if args.mode == 'train':
         train_network()
     elif args.mode == 'generate':
-        generate_music()
+        generate_music(temperature=args.temp)
     else:
         raise ValueError("Invalid mode")
 
 if __name__ == '__main__':
     main()
-
-
