@@ -6,11 +6,10 @@ import numpy as np
 from music21 import converter, instrument, note, chord, stream
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, LSTM, Activation
-from keras.utils import to_categorical  # <<== 修正点
+from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint
 import tensorflow as tf
 
-# 保证 reproducibility
 np.random.seed(42)
 
 def get_notes():
@@ -56,7 +55,7 @@ def prepare_sequences(notes, n_vocab):
 
     network_input = np.reshape(network_input, (n_patterns, sequence_length, 1))
     network_input = network_input / float(n_vocab)
-    network_output = to_categorical(network_output)  # <<== 修正点
+    network_output = to_categorical(network_output)
 
     return (network_input, network_output)
 
@@ -64,16 +63,24 @@ def create_network(network_input, n_vocab):
     print("[INFO] Creating model...")
     model = Sequential()
     model.add(LSTM(512, input_shape=(network_input.shape[1], network_input.shape[2]), return_sequences=True))
-    model.add(Dropout(0.3))
+    model.add(Dropout(0.2))
     model.add(LSTM(512, return_sequences=True))
-    model.add(Dropout(0.3))
+    model.add(Dropout(0.2))
     model.add(LSTM(512))
     model.add(Dense(256))
-    model.add(Dropout(0.3))
+    model.add(Dropout(0.2))
     model.add(Dense(n_vocab))
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
     return model
+
+def sample_with_temperature(preds, temperature=1.0):
+    preds = np.asarray(preds).astype('float64')
+    preds = np.log(preds + 1e-8) / temperature
+    exp_preds = np.exp(preds)
+    preds = exp_preds / np.sum(exp_preds)
+    probas = np.random.multinomial(1, preds.flatten(), 1)
+    return np.argmax(probas)
 
 def train_network():
     notes = get_notes()
@@ -84,9 +91,9 @@ def train_network():
     num_gpus = len(gpus)
     if num_gpus > 1:
         strategy = tf.distribute.MirroredStrategy()
-        print(f"[INFO] Multiple GPUs detected ({num_gpus}). Using MirroredStrategy for distributed training.")
+        print(f"[INFO] Multiple GPUs detected ({num_gpus}). Using MirroredStrategy.")
     else:
-        strategy = tf.distribute.get_strategy()  # 默认单卡策略
+        strategy = tf.distribute.get_strategy()
         print(f"[INFO] Single GPU or CPU detected. Using default strategy.")
 
     base_batch_size = 64
@@ -100,9 +107,8 @@ def train_network():
     checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
     callbacks_list = [checkpoint]
 
-    print(f"[INFO] Training model with effective batch size: {effective_batch_size}")
+    print(f"[INFO] Training with batch size: {effective_batch_size}")
     model.fit(network_input, network_output, epochs=200, batch_size=effective_batch_size, callbacks=callbacks_list)
-
 
 def generate_music():
     print("[INFO] Loading notes...")
@@ -116,38 +122,38 @@ def generate_music():
     network_input, _ = prepare_sequences(notes, n_vocab)
     model = create_network(network_input, n_vocab)
 
-    # Load the best weights
     weight_files = sorted(glob.glob("./weights/weights-improvement-*.hdf5"))
     if not weight_files:
-        print("[ERROR] No weights found! Please train the model first.")
+        print("[ERROR] No weights found!")
         return
     latest_weight = weight_files[-1]
     print(f"[INFO] Loading weights from {latest_weight}")
     model.load_weights(latest_weight)
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 
-    print("[INFO] Generating music...")
-    start = np.random.randint(0, len(network_input) - 1)
-    pattern = network_input[start]
-    prediction_output = []
+    os.makedirs('./outputs', exist_ok=True)
 
-    for note_index in range(500):
-        prediction_input = np.reshape(pattern, (1, pattern.shape[0], 1))
-        prediction_input = prediction_input / float(n_vocab)
+    for song_idx in range(5):  # 生成5首
+        start = np.random.randint(0, len(network_input) - 1)
+        pattern = network_input[start]
+        prediction_output = []
 
-        prediction = model.predict(prediction_input, verbose=0)
-        index = np.argmax(prediction)
-        result = int_to_note[index]
-        prediction_output.append(result)
+        for note_index in range(500):
+            prediction_input = np.reshape(pattern, (1, pattern.shape[0], 1))
+            prediction_input = prediction_input / float(n_vocab)
 
-        # pattern逐步更新，同时归一化
-        pattern = np.append(pattern, index / float(n_vocab))
-        pattern = pattern[1:]
+            prediction = model.predict(prediction_input, verbose=0)[0]
+            index = sample_with_temperature(prediction, temperature=0.9)
+            result = int_to_note[index]
+            prediction_output.append(result)
 
-    create_midi(prediction_output)
+            pattern = np.append(pattern, index / float(n_vocab))
+            pattern = pattern[1:]
 
-def create_midi(prediction_output):
-    print("[INFO] Creating MIDI file...")
+        create_midi(prediction_output, song_idx)
+
+def create_midi(prediction_output, idx):
+    print(f"[INFO] Creating MIDI file for song {idx}...")
     offset = 0
     output_notes = []
 
@@ -168,15 +174,14 @@ def create_midi(prediction_output):
             new_note.storedInstrument = instrument.Piano()
             output_notes.append(new_note)
 
-        offset += 0.5
+        offset += np.random.uniform(0.4, 0.6)
 
-    os.makedirs('./outputs', exist_ok=True)
     midi_stream = stream.Stream(output_notes)
-    midi_stream.write('midi', fp='./outputs/transformer_generated.mid')
-    print("[INFO] MIDI file created at ./outputs/transformer_generated.mid")
+    midi_stream.write('midi', fp=f'./outputs/transformer_generated_{idx}.mid')
+    print(f"[INFO] Saved to ./outputs/transformer_generated_{idx}.mid")
 
 def main():
-    parser = argparse.ArgumentParser(description="Monk Lambda Music LSTM Generator")
+    parser = argparse.ArgumentParser(description="Monk Lambda Music Transformer Generator")
     parser.add_argument('--mode', type=str, choices=['train', 'generate'], required=True,
                         help="Choose 'train' to train the model or 'generate' to generate music.")
     args = parser.parse_args()
@@ -190,5 +195,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
