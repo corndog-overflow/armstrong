@@ -15,20 +15,17 @@ echo -e "${PURPLE}=========================================${NC}"
 echo -e "${PURPLE}=== Monk Torch Transformer Setup Script ===${NC}"
 echo -e "${PURPLE}=========================================${NC}"
 
-echo -e "${BLUE}Loading necessary modules...${NC}"
-module load python/3.10
-# module load cuda  # Lambda默认有cuda，不用手动load
+# Make sure ~/.local/bin is in PATH (for --user installs)
+export PATH=$HOME/.local/bin:$PATH
 
-# Optional: upgrade pip
-python -m pip install --upgrade pip
+echo -e "${BLUE}Upgrading pip...${NC}"
+python3 -m pip install --upgrade pip
 
 echo -e "${BLUE}Installing Python dependencies...${NC}"
+pip3 install --user numpy==1.26 music21 matplotlib tqdm
 
-# Install required packages
-pip install --user numpy==1.26 music21 matplotlib tqdm
-
-# Install PyTorch with correct CUDA version
-pip install --user torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+echo -e "${BLUE}Installing PyTorch (CUDA 11.8)...${NC}"
+pip3 install --user torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # Create necessary directories
 echo -e "${BLUE}Creating project directories...${NC}"
@@ -39,7 +36,7 @@ mkdir -p ./outputs
 
 # Verify CUDA is visible to PyTorch
 echo -e "${YELLOW}Verifying PyTorch GPU availability...${NC}"
-python -c "import torch; print('GPU devices found:', torch.cuda.device_count())"
+python3 -c "import torch; print('GPU devices found:', torch.cuda.device_count())"
 
 echo -e "${PURPLE}=================================${NC}"
 echo -e "${PURPLE}=== Monk Torch Transformer Setup Complete ===${NC}"
@@ -55,21 +52,21 @@ read -p "Enter your choice (1-3): " choice
 case $choice in
   1)
     echo -e "${GREEN}Beginning training process...${NC}"
-    python monk_torch.py --mode train
+    python3 monk_torch.py --mode train
     echo -e "${GREEN}Training complete!${NC}"
     ;;
   2)
     echo -e "${GREEN}Beginning music generation...${NC}"
-    python monk_torch.py --mode generate
+    python3 monk_torch.py --mode generate
     echo -e "${GREEN}Music generation complete! Output saved as './outputs/transformer_generated_torch.mid'${NC}"
     ;;
   3)
     echo -e "${GREEN}Beginning training process...${NC}"
-    python monk_torch.py --mode train
+    python3 monk_torch.py --mode train
     echo -e "${GREEN}Training complete!${NC}"
     sleep 2
     echo -e "${GREEN}Now generating music with the trained model...${NC}"
-    python monk_torch.py --mode generate
+    python3 monk_torch.py --mode generate
     echo -e "${GREEN}Music generation complete! Output saved as './outputs/transformer_generated_torch.mid'${NC}"
     ;;
   *)
