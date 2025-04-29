@@ -34,7 +34,7 @@ echo -e "${PURPLE}=================================${NC}"
 # 选择执行模式
 echo -e "${YELLOW}What would you like to do?${NC}"
 echo "1. Train the model"
-echo "2. Generate music (now will generate 5 songs!)"
+echo "2. Generate music (now generates 5 songs to ./outputs/)"
 echo "3. Both train and generate"
 read -p "Enter your choice (1-3): " choice
 
