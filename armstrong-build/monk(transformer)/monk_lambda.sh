@@ -1,35 +1,76 @@
-# 改造后的 monk_lambda.sh （适配Docker版，不再需要conda）
-
 #!/bin/bash
+
+# Exit immediately if a command fails
 set -e
 
-# Color formatting
+# ANSI color codes
+RED='\033[0;31m'
 GREEN='\033[0;32m'
+BLUE='\033[0;34m'
 YELLOW='\033[0;33m'
 PURPLE='\033[0;35m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-# Welcome
-echo -e "${PURPLE}================ Monk Lambda Setup (Docker Version) ================${NC}"
+echo -e "${PURPLE}=========================================${NC}"
+echo -e "${PURPLE}=== Monk Lambda Transformer Setup ===${NC}"
+echo -e "${PURPLE}=========================================${NC}"
 
-# 安装Python依赖
-echo -e "${YELLOW}Installing required Python packages...${NC}"
+# Install dependencies
+echo -e "${BLUE}Installing required Python packages...${NC}"
 pip install --upgrade pip
-pip install music21 matplotlib tqdm
+pip install music21 matplotlib tqdm tensorflow==2.10.1
 
-# 检查TensorFlow GPU是否可用
+# Create necessary directories
+echo -e "${BLUE}Creating project directories...${NC}"
+mkdir -p ./data
+mkdir -p ./jazz_and_stuff
+
+# Verify TensorFlow GPU availability
 echo -e "${YELLOW}Verifying TensorFlow GPU availability...${NC}"
 python -c "import tensorflow as tf; print('GPUs detected by TensorFlow:', tf.config.list_physical_devices('GPU'))"
 
-# 进入项目目录（可选，如果你的路径不是/workspace就改）
-cd /workspace
+# Setup complete
+echo -e "${PURPLE}=================================${NC}"
+echo -e "${PURPLE}=== Setup Complete ===${NC}"
+echo -e "${PURPLE}=================================${NC}"
 
-# 启动主程序
-echo -e "${GREEN}Starting Monk Lambda Training/Generation...${NC}"
-python monk_lambda.py
+# Ask user what to do next
+echo -e "${YELLOW}What would you like to do?${NC}"
+echo "1. Train the model"
+echo "2. Generate music (requires a trained model)"
+echo "3. Both train and generate"
+read -p "Enter your choice (1-3): " choice
 
-# 结束
-echo -e "${PURPLE}================ Monk Lambda Process Complete ================${NC}"
+case $choice in
+  1)
+    echo -e "${GREEN}Starting training process...${NC}"
+    python monk_lambda.py --mode train
+    echo -e "${GREEN}Training complete!${NC}"
+    ;;
+  2)
+    echo -e "${GREEN}Starting music generation...${NC}"
+    python monk_lambda.py --mode generate
+    echo -e "${GREEN}Music generation complete! Output saved as 'transformer_generated.mid'${NC}"
+    ;;
+  3)
+    echo -e "${GREEN}Starting training process...${NC}"
+    python monk_lambda.py --mode train
+    echo -e "${GREEN}Training complete!${NC}"
+    sleep 2
+    echo -e "${GREEN}Starting music generation...${NC}"
+    python monk_lambda.py --mode generate
+    echo -e "${GREEN}Music generation complete! Output saved as 'transformer_generated.mid'${NC}"
+    ;;
+  *)
+    echo -e "${RED}Invalid choice. Exiting.${NC}"
+    exit 1
+    ;;
+esac
+
+echo -e "${PURPLE}=================================${NC}"
+echo -e "${PURPLE}=== Monk Lambda Process Complete ===${NC}"
+echo -e "${PURPLE}=================================${NC}"
+
 
 
 
