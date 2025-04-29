@@ -1,4 +1,4 @@
-# monk.py (TensorFlow Transformer with multi-GPU, mixed precision, early stopping + generation)
+# monk_lambda.py (修正版，适配 TensorFlow 2.10+ mixed_precision)
 
 import glob
 import pickle
@@ -10,11 +10,10 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense, Dropout, LayerNormalization, MultiHeadAttention
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.mixed_precision import experimental as mixed_precision
+from tensorflow.keras import mixed_precision
 
-# Set mixed precision for A100 GPUs
-policy = mixed_precision.Policy('mixed_float16')
-mixed_precision.set_policy(policy)
+# Set mixed precision policy for modern TensorFlow
+mixed_precision.set_global_policy('mixed_float16')
 
 RESET = '\033[0m'
 ORANGE = '\033[38;5;208m'
@@ -40,12 +39,6 @@ def get_notes(directory="./jazz_and_stuff", train=True):
         except:
             notes = midi.flat.notes
 
-        note_offsets = []
-        for el in notes:
-            if isinstance(el, (note.Note, chord.Chord)):
-                note_offsets.append(el.offset)
-
-        note_offsets.sort()
         prev_offset = -1
         for el in notes:
             duration = round(el.quarterLength * 2) / 2
@@ -59,7 +52,6 @@ def get_notes(directory="./jazz_and_stuff", train=True):
                     tokens.append(f"REST_{round((el.offset - prev_offset)*2)/2}")
                 chord_str = '.'.join(str(n) for n in el.normalOrder)
                 tokens.append(f"{chord_str}_{duration}")
-                prev_offset = el.offset
 
     with open('./data/tokens', 'wb') as f:
         pickle.dump(tokens, f)
@@ -145,6 +137,7 @@ def generate_music():
     vocab = sorted(set(notes))
     n_vocab = len(vocab)
     net_in, note_to_int, int_to_note = prepare_sequences(notes, n_vocab, train=False)
+
     model = build_transformer(n_vocab)
     model.load_weights('weights_transformer_checkpoint.keras')
 
@@ -157,12 +150,11 @@ def generate_music():
         prediction = np.log(prediction + 1e-9) / 1.2
         exp_preds = np.exp(prediction)
         prediction = exp_preds / np.sum(exp_preds)
-        top_indices = np.argsort(prediction)[-10:]
-        top_probs = prediction[top_indices] / np.sum(prediction[top_indices])
-        next_index = np.random.choice(top_indices, p=top_probs)
+        next_index = np.random.choice(len(prediction), p=prediction)
         output.append(int_to_note[next_index])
         pattern = pattern[1:] + [next_index]
 
+    # Convert to MIDI
     stream_out = stream.Stream()
     offset = 0
     for token in output:
@@ -188,16 +180,18 @@ def generate_music():
             continue
 
     stream_out.write('midi', fp='transformer_generated.mid')
-    print(f"{ORANGE}[INFO]{RESET} Generated MIDI saved as 'transformer_generated.mid'")
+    print(f"{RUST}[INFO]{RESET} Generated MIDI saved as 'transformer_generated.mid'")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['train', 'generate'], default='train')
     args = parser.parse_args()
+
     if args.mode == 'train':
         train_network()
     else:
         generate_music()
+
 
