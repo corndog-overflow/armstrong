@@ -64,7 +64,6 @@ def get_note_rhythm_tokens():
     return tokens
 
 def positional_encoding(length, depth):
-    """Create standard transformer positional encoding"""
     depth = depth/2
     positions = np.arange(length)[:, np.newaxis]
     depths = np.arange(depth)[np.newaxis, :]/depth
@@ -94,7 +93,6 @@ def prepare_sequences(tokens, n_vocab, sequence_length=100):
     return network_input, network_output, token_to_int, pitchnames
 
 def transformer_block(x, embed_dim, num_heads, ff_dim, rate=0.1):
-    """Implement a standard transformer block with attention, normalization, and feed-forward layers"""
     attn_output = MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim//num_heads)(x, x)
     attn_output = Dropout(rate)(attn_output)
     out1 = LayerNormalization(epsilon=1e-6)(x + attn_output)
@@ -105,7 +103,6 @@ def transformer_block(x, embed_dim, num_heads, ff_dim, rate=0.1):
     return LayerNormalization(epsilon=1e-6)(out1 + ffn_output)
 
 def create_transformer_model(seq_len, vocab_size, embed_dim=256, num_heads=4, ff_dim=512, num_layers=3):
-    """Create an improved transformer model with multiple layers and positional encoding"""
     inputs = Input(shape=(seq_len,))
     
     x = Embedding(input_dim=vocab_size, output_dim=embed_dim)(inputs)
@@ -126,7 +123,6 @@ def create_transformer_model(seq_len, vocab_size, embed_dim=256, num_heads=4, ff
     return model
 
 def extract_pitch_class(note_token):
-    """Extract the pitch class from a note token, handling both Notes and Chords"""
     if '_' not in note_token:
         return None
     
@@ -141,7 +137,6 @@ def extract_pitch_class(note_token):
         return None
 
 def extract_duration(note_token):
-    """Extract the duration from a token"""
     if '_' not in note_token:
         return None
     
@@ -151,7 +146,6 @@ def extract_duration(note_token):
         return None
 
 def analyze_rhythm_diversity(sequence):
-    """Analyze rhythm diversity and patterns"""
     durations = [extract_duration(t) for t in sequence if extract_duration(t) is not None]
     if not durations:
         return 0
@@ -170,7 +164,6 @@ def analyze_rhythm_diversity(sequence):
     return (meaningful_diversity / max(1, len(common_durations))) + (pattern_score / max(1, len(durations)))
 
 def analyze_melodic_contour(sequence):
-    """Analyze the melodic contour for interest and musicality"""
     pitches = []
     for token in sequence:
         try:
@@ -204,7 +197,6 @@ def analyze_melodic_contour(sequence):
     return (direction_changes / max(1, len(directions))) + motion_score
 
 def analyze_harmonic_consistency(sequence, key_name=None):
-    """Analyze harmonic consistency - how well notes fit with an implied key"""
     if not key_name:
         curr_key = key.Key('C', 'major')
     else:
@@ -235,7 +227,6 @@ def analyze_harmonic_consistency(sequence, key_name=None):
     return in_key_count / total_notes
 
 def reward_function(sequence, key_name=None):
-    """Comprehensive reward function using music theory principles"""
     if not sequence:
         return 0
     
@@ -276,7 +267,6 @@ def reward_function(sequence, key_name=None):
     return total_score
 
 def top_k_sample(preds, k=10, temperature=0.8):
-    """Sample from top k predictions with temperature control"""
     preds = np.asarray(preds).astype('float64')
     preds = np.log(preds + 1e-10) / temperature
     exp_preds = np.exp(preds)
@@ -290,7 +280,6 @@ def top_k_sample(preds, k=10, temperature=0.8):
     return np.random.choice(top_indices, p=top_probs)
 
 def generate_with_rl(model, network_input, int_to_token, token_to_int, num_tokens=500, trials=8):
-    """Generate music using reinforcement learning with improved reward function"""
     key_name = None
     try:
         with open('./data/keys_detected', 'rb') as f:
@@ -338,7 +327,6 @@ def generate_with_rl(model, network_input, int_to_token, token_to_int, num_token
     return best_output
 
 def train_network():
-    """Train the music generation model"""
     tokens = get_note_rhythm_tokens()
     n_vocab = len(set(tokens))
     network_input, network_output, _, _ = prepare_sequences(tokens, n_vocab)
@@ -375,7 +363,6 @@ def train_network():
     model.fit(network_input, network_output, epochs=100, batch_size=effective_batch_size, callbacks=callbacks_list)
 
 def generate_music():
-    """Generate music using the trained model"""
     with open('./data/tokens', 'rb') as f:
         tokens = pickle.load(f)
 
@@ -407,7 +394,6 @@ def generate_music():
         create_midi(output, song_idx)
 
 def create_midi(prediction_output, idx):
-    """Create a MIDI file from the generated output"""
     print(f"[INFO] Creating MIDI file for song {idx}...")
     offset = 0
     output_notes = []
