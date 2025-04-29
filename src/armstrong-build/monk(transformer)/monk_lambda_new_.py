@@ -119,7 +119,7 @@ def create_transformer_model(seq_len, vocab_size, embed_dim=256, num_heads=4, ff
     outputs = Dense(vocab_size, activation='softmax')(x)
 
     model = Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy')
+    model.compile(optimizer=Adam(learning_rate=0.0001, clipnorm = 1.0), loss='categorical_crossentropy')
     return model
 
 def extract_pitch_class(note_token):
