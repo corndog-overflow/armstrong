@@ -1,3 +1,5 @@
+# monk_lambda.sh (Lambda-compatible, multi-GPU setup + training + generation for monk_lambda.py)
+
 #!/bin/bash
 set -e
 
@@ -41,19 +43,20 @@ read -p "Enter your choice: " choice
 
 if [ "$choice" == "1" ]; then
   echo -e "${GREEN}Starting training on all available GPUs...${NC}"
-  python monk.py --mode train
+  python monk_lambda.py --mode train
 elif [ "$choice" == "2" ]; then
   echo -e "${GREEN}Generating music with trained model...${NC}"
-  python monk.py --mode generate
+  python monk_lambda.py --mode generate
 elif [ "$choice" == "3" ]; then
   echo -e "${GREEN}Training model...${NC}"
-  python monk.py --mode train
+  python monk_lambda.py --mode train
   sleep 2
   echo -e "${GREEN}Generating music...${NC}"
-  python monk.py --mode generate
+  python monk_lambda.py --mode generate
 else
   echo -e "${YELLOW}Exiting.${NC}"
   exit 0
 fi
 
 echo -e "${PURPLE}================== Done ==================${NC}"
+
