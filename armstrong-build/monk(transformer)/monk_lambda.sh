@@ -1,4 +1,4 @@
-# monk_lambda.sh (修正版：conda+pip混合安装，保证music21、tensorflow等正常)
+# monk_lambda.sh (升级版：自动TensorFlow升级到2.15并启用GPU)
 
 #!/bin/bash
 set -e
@@ -10,7 +10,7 @@ PURPLE='\033[0;35m'
 NC='\033[0m'
 
 # Welcome message
-echo -e "${PURPLE}==================== Monk Setup ===================${NC}"
+echo -e "${PURPLE}==================== Monk Lambda Setup (Auto-Upgrade TF) ===================${NC}"
 echo -e "${YELLOW}Activating Conda Environment...${NC}"
 
 # Setup Conda
@@ -25,9 +25,11 @@ conda activate $ENV_NAME
 # Dependencies
 echo -e "${YELLOW}Installing dependencies...${NC}"
 conda install -y numpy
-pip install music21 tensorflow==2.10.1 matplotlib tqdm
+pip install --upgrade pip
+pip install music21 matplotlib tqdm
 
-pip install --upgrade tensorflow
+# Install TensorFlow 2.15 to match CUDA 12.8
+pip install --upgrade tensorflow==2.15
 
 # Directory setup
 mkdir -p ./data ./jazz_and_stuff
@@ -36,10 +38,14 @@ mkdir -p ./data ./jazz_and_stuff
 echo -e "${GREEN}Available GPUs:${NC}"
 nvidia-smi
 
+# Confirm TensorFlow sees GPU
+echo -e "${YELLOW}Verifying TensorFlow GPU availability...${NC}"
+python -c "import tensorflow as tf; print('GPUs detected by TensorFlow:', tf.config.list_physical_devices('GPU'))"
+
 # Train or Generate
 echo -e "${PURPLE}Select Action:${NC}"
-echo "1. Train Transformer (Multi-GPU)"
-echo "2. Generate Music (Single-GPU)"
+echo "1. Train Transformer"
+echo "2. Generate Music"
 echo "3. Train and Generate"
 echo "4. Exit"
 read -p "Enter your choice: " choice
@@ -48,10 +54,10 @@ if [ "$choice" == "1" ]; then
   echo -e "${GREEN}Starting training...${NC}"
   python monk_lambda.py --mode train
 elif [ "$choice" == "2" ]; then
-  echo -e "${GREEN}Generating music...${NC}"
+  echo -e "${GREEN}Starting music generation...${NC}"
   python monk_lambda.py --mode generate
 elif [ "$choice" == "3" ]; then
-  echo -e "${GREEN}Training model...${NC}"
+  echo -e "${GREEN}Training...${NC}"
   python monk_lambda.py --mode train
   sleep 2
   echo -e "${GREEN}Generating music...${NC}"
@@ -61,6 +67,6 @@ else
   exit 0
 fi
 
-echo -e "${PURPLE}================== Done ==================${NC}"
+echo -e "${PURPLE}================== Monk Lambda Process Done ==================${NC}"
 
 
