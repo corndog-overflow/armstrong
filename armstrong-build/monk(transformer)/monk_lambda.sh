@@ -1,40 +1,36 @@
 #!/bin/bash
-
-# Exit immediately if a command fails
 set -e
 
-# ANSI color codes
+# Color formatting
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
 YELLOW='\033[0;33m'
 PURPLE='\033[0;35m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo -e "${PURPLE}=========================================${NC}"
 echo -e "${PURPLE}=== Monk Lambda Transformer Setup ===${NC}"
 echo -e "${PURPLE}=========================================${NC}"
 
-# Install dependencies
-echo -e "${BLUE}Installing required Python packages...${NC}"
+# 安装Python依赖
+echo -e "${YELLOW}Installing required Python packages...${NC}"
 pip install --upgrade pip
-pip install music21 matplotlib tqdm tensorflow==2.10.1
+pip install music21 matplotlib tqdm tensorflow==2.15.1
 
-# Create necessary directories
-echo -e "${BLUE}Creating project directories...${NC}"
+# 创建必要的目录
+echo -e "${YELLOW}Creating project directories...${NC}"
 mkdir -p ./data
 mkdir -p ./jazz_and_stuff
 
-# Verify TensorFlow GPU availability
+# 检查TensorFlow GPU
 echo -e "${YELLOW}Verifying TensorFlow GPU availability...${NC}"
 python -c "import tensorflow as tf; print('GPUs detected by TensorFlow:', tf.config.list_physical_devices('GPU'))"
 
-# Setup complete
 echo -e "${PURPLE}=================================${NC}"
 echo -e "${PURPLE}=== Setup Complete ===${NC}"
 echo -e "${PURPLE}=================================${NC}"
 
-# Ask user what to do next
+# 选择执行模式
 echo -e "${YELLOW}What would you like to do?${NC}"
 echo "1. Train the model"
 echo "2. Generate music (requires a trained model)"
@@ -70,6 +66,7 @@ esac
 echo -e "${PURPLE}=================================${NC}"
 echo -e "${PURPLE}=== Monk Lambda Process Complete ===${NC}"
 echo -e "${PURPLE}=================================${NC}"
+
 
 
 
