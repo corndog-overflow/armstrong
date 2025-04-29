@@ -1,3 +1,5 @@
+# monk.py (TensorFlow Transformer with multi-GPU, mixed precision, early stopping + generation)
+
 import glob
 import pickle
 import numpy as np
@@ -14,7 +16,6 @@ from tensorflow.keras.mixed_precision import experimental as mixed_precision
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_policy(policy)
 
-# Color codes
 RESET = '\033[0m'
 ORANGE = '\033[38;5;208m'
 RUST = '\033[38;5;166m'
@@ -139,6 +140,57 @@ def train_network():
         pickle.dump({'note_to_int': note2int, 'int_to_note': int2note}, f)
 
 
+def generate_music():
+    notes = get_notes(train=False)
+    vocab = sorted(set(notes))
+    n_vocab = len(vocab)
+    net_in, note_to_int, int_to_note = prepare_sequences(notes, n_vocab, train=False)
+    model = build_transformer(n_vocab)
+    model.load_weights('weights_transformer_checkpoint.keras')
+
+    seed = net_in[np.random.randint(0, len(net_in) - 1)]
+    output = []
+    pattern = list(seed)
+
+    for _ in range(500):
+        prediction = model.predict(np.array([pattern]), verbose=0)[0]
+        prediction = np.log(prediction + 1e-9) / 1.2
+        exp_preds = np.exp(prediction)
+        prediction = exp_preds / np.sum(exp_preds)
+        top_indices = np.argsort(prediction)[-10:]
+        top_probs = prediction[top_indices] / np.sum(prediction[top_indices])
+        next_index = np.random.choice(top_indices, p=top_probs)
+        output.append(int_to_note[next_index])
+        pattern = pattern[1:] + [next_index]
+
+    stream_out = stream.Stream()
+    offset = 0
+    for token in output:
+        try:
+            if token.startswith('REST_'):
+                offset += float(token.split('_')[1])
+                continue
+            base, dur = token.rsplit('_', 1)
+            duration = float(dur)
+            if '.' in base or base.isdigit():
+                chord_notes = [note.Note(int(n)) for n in base.split('.')]
+                c = chord.Chord(chord_notes)
+                c.offset = offset
+                c.quarterLength = duration
+                stream_out.append(c)
+            else:
+                n = note.Note(base)
+                n.offset = offset
+                n.quarterLength = duration
+                stream_out.append(n)
+            offset += duration
+        except:
+            continue
+
+    stream_out.write('midi', fp='transformer_generated.mid')
+    print(f"{ORANGE}[INFO]{RESET} Generated MIDI saved as 'transformer_generated.mid'")
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
@@ -147,4 +199,5 @@ if __name__ == '__main__':
     if args.mode == 'train':
         train_network()
     else:
-        print("[TODO] Generation mode not yet supported in this multi-GPU version.")
+        generate_music()
+
