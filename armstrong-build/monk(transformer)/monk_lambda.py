@@ -6,7 +6,7 @@ import numpy as np
 from music21 import converter, instrument, note, chord, stream
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, LSTM, Activation
-from keras.utils import np_utils
+from keras.utils import to_categorical  # <<== 修正点
 from keras.callbacks import ModelCheckpoint
 import tensorflow as tf
 
@@ -19,7 +19,7 @@ def get_notes():
     for file in glob.glob("./jazz_and_stuff/*.mid"):
         midi = converter.parse(file)
         notes_to_parse = None
-        try:  # file has instrument parts
+        try:
             s2 = instrument.partitionByInstrument(midi)
             notes_to_parse = s2.parts[0].recurse()
         except:
@@ -31,6 +31,7 @@ def get_notes():
             elif isinstance(element, chord.Chord):
                 notes.append('.'.join(str(n) for n in element.normalOrder))
 
+    os.makedirs('./data', exist_ok=True)
     with open('./data/tokens', 'wb') as f:
         pickle.dump(notes, f)
 
@@ -55,7 +56,7 @@ def prepare_sequences(notes, n_vocab):
 
     network_input = np.reshape(network_input, (n_patterns, sequence_length, 1))
     network_input = network_input / float(n_vocab)
-    network_output = np_utils.to_categorical(network_output)
+    network_output = to_categorical(network_output)  # <<== 修正点
 
     return (network_input, network_output)
 
@@ -80,7 +81,8 @@ def train_network():
     network_input, network_output = prepare_sequences(notes, n_vocab)
     model = create_network(network_input, n_vocab)
 
-    filepath = "./weights-improvement-{epoch:02d}-{loss:.4f}.hdf5"
+    os.makedirs('./weights', exist_ok=True)
+    filepath = "./weights/weights-improvement-{epoch:02d}-{loss:.4f}.hdf5"
     checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
     callbacks_list = [checkpoint]
 
@@ -100,11 +102,13 @@ def generate_music():
     model = create_network(network_input, n_vocab)
 
     # Load the best weights
-    weights = sorted(glob.glob("weights-improvement-*.hdf5"))
-    if not weights:
+    weight_files = sorted(glob.glob("./weights/weights-improvement-*.hdf5"))
+    if not weight_files:
         print("[ERROR] No weights found! Please train the model first.")
         return
-    model.load_weights(weights[-1])
+    latest_weight = weight_files[-1]
+    print(f"[INFO] Loading weights from {latest_weight}")
+    model.load_weights(latest_weight)
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 
     print("[INFO] Generating music...")
@@ -121,7 +125,8 @@ def generate_music():
         result = int_to_note[index]
         prediction_output.append(result)
 
-        pattern = np.append(pattern, index)
+        # pattern逐步更新，同时归一化
+        pattern = np.append(pattern, index / float(n_vocab))
         pattern = pattern[1:]
 
     create_midi(prediction_output)
@@ -150,14 +155,15 @@ def create_midi(prediction_output):
 
         offset += 0.5
 
+    os.makedirs('./outputs', exist_ok=True)
     midi_stream = stream.Stream(output_notes)
-    midi_stream.write('midi', fp='transformer_generated.mid')
+    midi_stream.write('midi', fp='./outputs/transformer_generated.mid')
+    print("[INFO] MIDI file created at ./outputs/transformer_generated.mid")
 
 def main():
-    parser = argparse.ArgumentParser(description="Monk Lambda Music Transformer")
+    parser = argparse.ArgumentParser(description="Monk Lambda Music LSTM Generator")
     parser.add_argument('--mode', type=str, choices=['train', 'generate'], required=True,
                         help="Choose 'train' to train the model or 'generate' to generate music.")
-
     args = parser.parse_args()
 
     if args.mode == 'train':
@@ -169,6 +175,5 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 
