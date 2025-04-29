@@ -8,8 +8,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from music21 import converter, instrument, note, chord, stream, duration
+from fractions import Fraction
 
-# 保证 reproducibility
 np.random.seed(42)
 torch.manual_seed(42)
 
@@ -23,17 +23,17 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        self.pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, x):
-        return x + self.pe[:, :x.size(1)].to(x.device)
+        return x + self.pe[:, :x.size(1)]
 
 class TransformerModel(nn.Module):
     def __init__(self, vocab_size, d_model=256, nhead=8, num_layers=4):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model)
-        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.fc = nn.Linear(d_model, vocab_size)
 
@@ -41,8 +41,7 @@ class TransformerModel(nn.Module):
         x = self.embedding(x)
         x = self.pos_encoder(x)
         x = self.transformer(x)
-        x = self.fc(x[:, -1])
-        return x
+        return self.fc(x)
 
 class MIDIDataset(Dataset):
     def __init__(self, tokens, token_to_int, sequence_length=100):
@@ -55,9 +54,9 @@ class MIDIDataset(Dataset):
 
     def __getitem__(self, idx):
         seq_in = self.tokens[idx:idx + self.sequence_length]
-        seq_out = self.tokens[idx + self.sequence_length]
+        seq_out = self.tokens[idx + 1:idx + self.sequence_length + 1]
         x = torch.tensor([self.token_to_int[n] for n in seq_in], dtype=torch.long)
-        y = torch.tensor(self.token_to_int[seq_out], dtype=torch.long)
+        y = torch.tensor([self.token_to_int[n] for n in seq_out], dtype=torch.long)
         return x, y
 
 def get_note_rhythm_tokens():
@@ -65,7 +64,6 @@ def get_note_rhythm_tokens():
     tokens = []
     for file in glob.glob("./jazz_and_stuff/*.mid"):
         midi = converter.parse(file)
-        notes_to_parse = None
         try:
             s2 = instrument.partitionByInstrument(midi)
             notes_to_parse = s2.parts[0].recurse()
@@ -74,11 +72,16 @@ def get_note_rhythm_tokens():
 
         for element in notes_to_parse:
             dur = element.quarterLength
+            try:
+                dur_str = str(Fraction(dur))
+            except:
+                continue  # 跳过非法节拍
+
             if isinstance(element, note.Note):
-                tokens.append(f"{element.pitch}_{dur}")
+                tokens.append(f"{element.pitch}_{dur_str}")
             elif isinstance(element, chord.Chord):
                 chord_token = '.'.join(str(n) for n in element.normalOrder)
-                tokens.append(f"{chord_token}_{dur}")
+                tokens.append(f"{chord_token}_{dur_str}")
 
     os.makedirs('./data', exist_ok=True)
     with open('./data/tokens', 'wb') as f:
@@ -107,7 +110,7 @@ def train_network():
         print(f"[INFO] Using DataParallel with {num_gpus} GPUs.")
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=2e-3)
 
     os.makedirs('./weights', exist_ok=True)
 
@@ -116,16 +119,20 @@ def train_network():
         total_loss = 0
         for x, y in loader:
             x, y = x.to(device), y.to(device)
+            out = model(x)  # [B, L, vocab]
+            loss = criterion(out.view(-1, out.size(-1)), y.view(-1))
             optimizer.zero_grad()
-            out = model(x)
-            loss = criterion(out, y)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
         print(f"Epoch {epoch+1}: Loss = {total_loss/len(loader):.4f}")
 
         save_model = model.module if isinstance(model, nn.DataParallel) else model
-        torch.save({'model_state_dict': save_model.state_dict(), 'token_to_int': token_to_int, 'int_to_token': int_to_token}, f"./weights/epoch_{epoch+1}.pth")
+        torch.save({
+            'model_state_dict': save_model.state_dict(),
+            'token_to_int': token_to_int,
+            'int_to_token': int_to_token
+        }, f"./weights/epoch_{epoch+1}.pth")
 
 def sample_with_temperature(logits, temperature=1.0):
     logits = logits / temperature
@@ -142,21 +149,18 @@ def generate_music():
     vocab_size = len(token_to_int)
     model = TransformerModel(vocab_size).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
-
     model.eval()
 
     start_idx = np.random.randint(0, len(token_to_int) - 100)
     pattern = list(token_to_int.values())[start_idx:start_idx + 100]
-
     prediction_output = []
 
     for note_index in range(500):
         input_seq = torch.tensor(pattern, dtype=torch.long).unsqueeze(0).to(device)
         with torch.no_grad():
-            prediction = model(input_seq)
-        idx = sample_with_temperature(prediction.squeeze(0), temperature=1.0)
+            prediction = model(input_seq)  # [1, L, vocab]
+        idx = sample_with_temperature(prediction[0, -1], temperature=1.0)
         result = int_to_token[idx]
-
         prediction_output.append(result)
         pattern.append(idx)
         pattern = pattern[1:]
@@ -172,7 +176,11 @@ def create_midi(prediction_output):
         if '_' not in pattern:
             continue
         pitch_part, dur_part = pattern.split('_')
-        dur = float(dur_part)
+        try:
+            dur = float(Fraction(dur_part))
+        except:
+            print(f"[WARNING] Invalid duration: {dur_part}")
+            continue
         try:
             if '.' in pitch_part or pitch_part.isdigit():
                 notes_in_chord = pitch_part.split('.')
@@ -214,4 +222,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
