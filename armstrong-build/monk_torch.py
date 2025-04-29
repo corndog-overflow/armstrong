@@ -7,50 +7,62 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from music21 import converter, instrument, note, chord, stream
+from music21 import converter, instrument, note, chord, stream, duration
 
 # 保证 reproducibility
 np.random.seed(42)
 torch.manual_seed(42)
 
-# 设置device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super().__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.pe = pe.unsqueeze(0)
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1)].to(x.device)
 
 class TransformerModel(nn.Module):
     def __init__(self, vocab_size, d_model=256, nhead=8, num_layers=4):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, d_model)
-        self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead),
-            num_layers=num_layers
-        )
+        self.pos_encoder = PositionalEncoding(d_model)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.fc = nn.Linear(d_model, vocab_size)
 
     def forward(self, x):
         x = self.embedding(x)
+        x = self.pos_encoder(x)
         x = self.transformer(x)
         x = self.fc(x[:, -1])
         return x
 
 class MIDIDataset(Dataset):
-    def __init__(self, notes, note_to_int, sequence_length=100):
+    def __init__(self, tokens, token_to_int, sequence_length=100):
+        self.tokens = tokens
+        self.token_to_int = token_to_int
         self.sequence_length = sequence_length
-        self.notes = notes
-        self.note_to_int = note_to_int
 
     def __len__(self):
-        return len(self.notes) - self.sequence_length
+        return len(self.tokens) - self.sequence_length
 
     def __getitem__(self, idx):
-        seq_in = self.notes[idx:idx + self.sequence_length]
-        seq_out = self.notes[idx + self.sequence_length]
-        x = torch.tensor([self.note_to_int[n] for n in seq_in], dtype=torch.long)
-        y = torch.tensor(self.note_to_int[seq_out], dtype=torch.long)
+        seq_in = self.tokens[idx:idx + self.sequence_length]
+        seq_out = self.tokens[idx + self.sequence_length]
+        x = torch.tensor([self.token_to_int[n] for n in seq_in], dtype=torch.long)
+        y = torch.tensor(self.token_to_int[seq_out], dtype=torch.long)
         return x, y
 
-def get_notes():
-    print("[INFO] Extracting notes and chords...")
-    notes = []
+def get_note_rhythm_tokens():
+    print("[INFO] Extracting pitch-duration tokens...")
+    tokens = []
     for file in glob.glob("./jazz_and_stuff/*.mid"):
         midi = converter.parse(file)
         notes_to_parse = None
@@ -61,38 +73,43 @@ def get_notes():
             notes_to_parse = midi.flat.notes
 
         for element in notes_to_parse:
+            dur = element.quarterLength
             if isinstance(element, note.Note):
-                notes.append(str(element.pitch))
+                tokens.append(f"{element.pitch}_{dur}")
             elif isinstance(element, chord.Chord):
-                notes.append('.'.join(str(n) for n in element.normalOrder))
+                chord_token = '.'.join(str(n) for n in element.normalOrder)
+                tokens.append(f"{chord_token}_{dur}")
 
-    return notes
+    os.makedirs('./data', exist_ok=True)
+    with open('./data/tokens', 'wb') as f:
+        pickle.dump(tokens, f)
 
-def train_model():
-    tokens = get_notes()
+    return tokens
+
+def train_network():
+    tokens = get_note_rhythm_tokens()
     vocab = sorted(set(tokens))
-    note_to_int = {note: i for i, note in enumerate(vocab)}
-    int_to_note = {i: note for i, note in enumerate(vocab)}
+    token_to_int = {note: i for i, note in enumerate(vocab)}
+    int_to_token = {i: note for i, note in enumerate(vocab)}
 
-    dataset = MIDIDataset(tokens, note_to_int)
-
-    # 检测GPU数量
+    dataset = MIDIDataset(tokens, token_to_int)
     num_gpus = torch.cuda.device_count()
     print(f"[INFO] GPUs detected: {num_gpus}")
 
-    base_batch_size = 128
-    effective_batch_size = base_batch_size * num_gpus if num_gpus > 0 else base_batch_size
+    base_batch_size = 64
+    effective_batch_size = base_batch_size * max(1, num_gpus)
 
     loader = DataLoader(dataset, batch_size=effective_batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     model = TransformerModel(len(vocab)).to(device)
-
     if num_gpus > 1:
         model = nn.DataParallel(model)
         print(f"[INFO] Using DataParallel with {num_gpus} GPUs.")
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+    os.makedirs('./weights', exist_ok=True)
 
     model.train()
     for epoch in range(100):
@@ -108,32 +125,28 @@ def train_model():
         print(f"Epoch {epoch+1}: Loss = {total_loss/len(loader):.4f}")
 
         save_model = model.module if isinstance(model, nn.DataParallel) else model
-        torch.save(save_model.state_dict(), "./outputs/transformer_music.pth")
+        torch.save({'model_state_dict': save_model.state_dict(), 'token_to_int': token_to_int, 'int_to_token': int_to_token}, f"./weights/epoch_{epoch+1}.pth")
 
-    os.makedirs('./data', exist_ok=True)
-    with open('./data/note_mappings.pkl', 'wb') as f:
-        pickle.dump({'note_to_int': note_to_int, 'int_to_note': int_to_note}, f)
+def sample_with_temperature(logits, temperature=1.0):
+    logits = logits / temperature
+    probs = torch.softmax(logits, dim=-1)
+    idx = torch.multinomial(probs, num_samples=1)
+    return idx.item()
 
 def generate_music():
     print("[INFO] Generating music...")
-    with open('./data/note_mappings.pkl', 'rb') as f:
-        mappings = pickle.load(f)
+    checkpoint = torch.load(sorted(glob.glob("./weights/epoch_*.pth"))[-1], map_location=device)
+    token_to_int = checkpoint['token_to_int']
+    int_to_token = checkpoint['int_to_token']
 
-    note_to_int = mappings['note_to_int']
-    int_to_note = mappings['int_to_note']
-
-    vocab_size = len(note_to_int)
+    vocab_size = len(token_to_int)
     model = TransformerModel(vocab_size).to(device)
-
-    # 加载权重
-    checkpoint = torch.load("./outputs/transformer_music.pth", map_location=device)
-    model.load_state_dict(checkpoint)
+    model.load_state_dict(checkpoint['model_state_dict'])
 
     model.eval()
 
-    start = np.random.randint(0, len(note_to_int) - 100)
-    pattern = list(note_to_int.keys())[start:start + 100]
-    pattern = [note_to_int[n] for n in pattern]
+    start_idx = np.random.randint(0, len(token_to_int) - 100)
+    pattern = list(token_to_int.values())[start_idx:start_idx + 100]
 
     prediction_output = []
 
@@ -141,8 +154,8 @@ def generate_music():
         input_seq = torch.tensor(pattern, dtype=torch.long).unsqueeze(0).to(device)
         with torch.no_grad():
             prediction = model(input_seq)
-        idx = torch.argmax(prediction, dim=1).item()
-        result = int_to_note[idx]
+        idx = sample_with_temperature(prediction.squeeze(0), temperature=1.0)
+        result = int_to_token[idx]
 
         prediction_output.append(result)
         pattern.append(idx)
@@ -156,41 +169,48 @@ def create_midi(prediction_output):
     output_notes = []
 
     for pattern in prediction_output:
-        if ('.' in pattern) or pattern.isdigit():
-            notes_in_chord = pattern.split('.')
-            notes = []
-            for current_note in notes_in_chord:
-                new_note = note.Note(int(current_note))
+        if '_' not in pattern:
+            continue
+        pitch_part, dur_part = pattern.split('_')
+        dur = float(dur_part)
+        try:
+            if '.' in pitch_part or pitch_part.isdigit():
+                notes_in_chord = pitch_part.split('.')
+                notes_list = []
+                for current_note in notes_in_chord:
+                    new_note = note.Note(int(current_note))
+                    new_note.duration = duration.Duration(dur)
+                    new_note.storedInstrument = instrument.Piano()
+                    notes_list.append(new_note)
+                new_chord = chord.Chord(notes_list)
+                new_chord.offset = offset
+                output_notes.append(new_chord)
+            else:
+                new_note = note.Note(pitch_part)
+                new_note.duration = duration.Duration(dur)
+                new_note.offset = offset
                 new_note.storedInstrument = instrument.Piano()
-                notes.append(new_note)
-            new_chord = chord.Chord(notes)
-            new_chord.offset = offset
-            output_notes.append(new_chord)
-        else:
-            new_note = note.Note(pattern)
-            new_note.offset = offset
-            new_note.storedInstrument = instrument.Piano()
-            output_notes.append(new_note)
-
-        offset += 0.5
+                output_notes.append(new_note)
+        except:
+            continue
+        offset += dur
 
     os.makedirs('./outputs', exist_ok=True)
     midi_stream = stream.Stream(output_notes)
     midi_stream.write('midi', fp='./outputs/transformer_generated_torch.mid')
-
+    print(f"[INFO] Saved to ./outputs/transformer_generated_torch.mid")
 
 def main():
-    parser = argparse.ArgumentParser(description="Monk Torch Music Transformer")
-    parser.add_argument('--mode', type=str, choices=['train', 'generate'], required=True,
-                        help="Choose 'train' to train the model or 'generate' to generate music.")
+    parser = argparse.ArgumentParser(description="Torch Transformer Music Generator")
+    parser.add_argument('--mode', type=str, choices=['train', 'generate'], required=True)
     args = parser.parse_args()
 
     if args.mode == 'train':
-        train_model()
+        train_network()
     elif args.mode == 'generate':
         generate_music()
     else:
-        raise ValueError("Invalid mode. Choose 'train' or 'generate'.")
+        raise ValueError("Invalid mode")
 
 if __name__ == '__main__':
     main()
