@@ -266,7 +266,7 @@ def reward_function(sequence, key_name=None):
     
     return total_score
 
-def top_k_sample(preds, k=10, temperature=0.8):
+def top_k_sample(preds, k=5, temperature=0.8):
     preds = np.asarray(preds).astype('float64')
     preds = np.log(preds + 1e-10) / temperature
     exp_preds = np.exp(preds)
