@@ -1,4 +1,4 @@
-# monk_lambda.py (修正版，适配 TensorFlow 2.10+ mixed_precision)
+# monk_lambda.py (修正版 - 解决 float16 + float32 兼容性问题)
 
 import glob
 import pickle
@@ -12,7 +12,7 @@ from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLRO
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import mixed_precision
 
-# Set mixed precision policy for modern TensorFlow
+# Set mixed precision policy
 mixed_precision.set_global_policy('mixed_float16')
 
 RESET = '\033[0m'
@@ -83,7 +83,7 @@ def positional_encoding(position, d_model):
     angle_rads = pos * angles
     angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
     angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
-    return tf.cast(angle_rads[np.newaxis, ...], tf.float32)
+    return tf.cast(angle_rads[np.newaxis, ...], tf.float16)  # <-- 修正点！
 
 
 def transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0.2):
@@ -154,7 +154,6 @@ def generate_music():
         output.append(int_to_note[next_index])
         pattern = pattern[1:] + [next_index]
 
-    # Convert to MIDI
     stream_out = stream.Stream()
     offset = 0
     for token in output:
@@ -193,5 +192,6 @@ if __name__ == "__main__":
         train_network()
     else:
         generate_music()
+
 
 
