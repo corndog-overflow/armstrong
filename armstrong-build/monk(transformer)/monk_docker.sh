@@ -1,4 +1,4 @@
-# monk_docker.sh （一键拉镜像 + 启动Docker + 安装依赖 + 直接训练）
+# monk_docker.sh （一键拉镜像 + 启动Docker + 安装依赖 + sudo版）
 
 #!/bin/bash
 set -e
@@ -10,7 +10,7 @@ PURPLE='\033[0;35m'
 NC='\033[0m'
 
 # Welcome
-echo -e "${PURPLE}================ Monk Docker Setup ================${NC}"
+echo -e "${PURPLE}================ Monk Docker Setup (Sudo Version) ================${NC}"
 
 # 1. 检查Docker
 if ! command -v docker &> /dev/null
@@ -21,14 +21,14 @@ fi
 
 # 2. 拉取官方TensorFlow GPU镜像
 echo -e "${YELLOW}Pulling TensorFlow 2.15 GPU Docker image...${NC}"
-docker pull tensorflow/tensorflow:2.15.0-gpu
+sudo docker pull tensorflow/tensorflow:2.15.0-gpu
 
 # 3. 定义本地代码路径（改成你的路径！）
 LOCAL_PROJECT_PATH="/home/ubuntu/armstrong/armstrong-build/monk(transformer)"
 
 # 4. 启动Docker容器并挂载代码
 echo -e "${YELLOW}Starting Docker container...${NC}"
-docker run --gpus all -it \
+sudo docker run --gpus all -it \
   -v "$LOCAL_PROJECT_PATH":/workspace \
   tensorflow/tensorflow:2.15.0-gpu bash -c "\
     cd /workspace && \
@@ -38,3 +38,4 @@ docker run --gpus all -it \
 
 # 5. 结束
 echo -e "${PURPLE}================ Monk Docker Process Done ================${NC}"
+
