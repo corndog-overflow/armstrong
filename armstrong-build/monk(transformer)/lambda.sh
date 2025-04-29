@@ -34,12 +34,23 @@ nvidia-smi
 # Train or Generate
 echo -e "${PURPLE}Select Action:${NC}"
 echo "1. Train Transformer (Multi-GPU)"
-echo "2. Exit"
+echo "2. Generate Music (Single-GPU)"
+echo "3. Train and Generate"
+echo "4. Exit"
 read -p "Enter your choice: " choice
 
 if [ "$choice" == "1" ]; then
   echo -e "${GREEN}Starting training on all available GPUs...${NC}"
   python monk.py --mode train
+elif [ "$choice" == "2" ]; then
+  echo -e "${GREEN}Generating music with trained model...${NC}"
+  python monk.py --mode generate
+elif [ "$choice" == "3" ]; then
+  echo -e "${GREEN}Training model...${NC}"
+  python monk.py --mode train
+  sleep 2
+  echo -e "${GREEN}Generating music...${NC}"
+  python monk.py --mode generate
 else
   echo -e "${YELLOW}Exiting.${NC}"
   exit 0
