@@ -79,15 +79,30 @@ def train_network():
     notes = get_notes()
     n_vocab = len(set(notes))
     network_input, network_output = prepare_sequences(notes, n_vocab)
-    model = create_network(network_input, n_vocab)
+
+    gpus = tf.config.list_physical_devices('GPU')
+    num_gpus = len(gpus)
+    if num_gpus > 1:
+        strategy = tf.distribute.MirroredStrategy()
+        print(f"[INFO] Multiple GPUs detected ({num_gpus}). Using MirroredStrategy for distributed training.")
+    else:
+        strategy = tf.distribute.get_strategy()  # 默认单卡策略
+        print(f"[INFO] Single GPU or CPU detected. Using default strategy.")
+
+    base_batch_size = 64
+    effective_batch_size = base_batch_size * num_gpus if num_gpus > 0 else base_batch_size
+
+    with strategy.scope():
+        model = create_network(network_input, n_vocab)
 
     os.makedirs('./weights', exist_ok=True)
     filepath = "./weights/weights-improvement-{epoch:02d}-{loss:.4f}.hdf5"
     checkpoint = ModelCheckpoint(filepath, monitor='loss', verbose=1, save_best_only=True, mode='min')
     callbacks_list = [checkpoint]
 
-    print("[INFO] Training model...")
-    model.fit(network_input, network_output, epochs=200, batch_size=64, callbacks=callbacks_list)
+    print(f"[INFO] Training model with effective batch size: {effective_batch_size}")
+    model.fit(network_input, network_output, epochs=200, batch_size=effective_batch_size, callbacks=callbacks_list)
+
 
 def generate_music():
     print("[INFO] Loading notes...")
