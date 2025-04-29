@@ -1,4 +1,4 @@
-# monk_lambda.sh (Lambda-compatible, multi-GPU setup + training + generation for monk_lambda.py)
+# monk_lambda.sh (修正版：conda+pip混合安装，保证music21、tensorflow等正常)
 
 #!/bin/bash
 set -e
@@ -17,14 +17,15 @@ echo -e "${YELLOW}Activating Conda Environment...${NC}"
 eval "$(conda shell.bash hook)"
 ENV_NAME=monktransformerenv
 if ! conda info --envs | grep -q "$ENV_NAME"; then
+  echo -e "${YELLOW}Creating Conda Environment: $ENV_NAME${NC}"
   conda create -y -n $ENV_NAME python=3.10
 fi
 conda activate $ENV_NAME
 
 # Dependencies
 echo -e "${YELLOW}Installing dependencies...${NC}"
-conda install -y numpy music21
-pip install tensorflow==2.10.1 matplotlib tqdm
+conda install -y numpy
+pip install music21 tensorflow==2.10.1 matplotlib tqdm
 
 # Directory setup
 mkdir -p ./data ./jazz_and_stuff
@@ -42,10 +43,10 @@ echo "4. Exit"
 read -p "Enter your choice: " choice
 
 if [ "$choice" == "1" ]; then
-  echo -e "${GREEN}Starting training on all available GPUs...${NC}"
+  echo -e "${GREEN}Starting training...${NC}"
   python monk_lambda.py --mode train
 elif [ "$choice" == "2" ]; then
-  echo -e "${GREEN}Generating music with trained model...${NC}"
+  echo -e "${GREEN}Generating music...${NC}"
   python monk_lambda.py --mode generate
 elif [ "$choice" == "3" ]; then
   echo -e "${GREEN}Training model...${NC}"
@@ -59,4 +60,5 @@ else
 fi
 
 echo -e "${PURPLE}================== Done ==================${NC}"
+
 
