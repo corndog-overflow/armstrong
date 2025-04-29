@@ -27,6 +27,8 @@ echo -e "${YELLOW}Installing dependencies...${NC}"
 conda install -y numpy
 pip install music21 tensorflow==2.10.1 matplotlib tqdm
 
+pip install --upgrade tensorflow
+
 # Directory setup
 mkdir -p ./data ./jazz_and_stuff
 
