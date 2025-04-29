@@ -1,3 +1,4 @@
+# monk_torch8.sh (修正版：conda+pip混合安装，保证music21、torch等正常)
 
 #!/bin/bash
 set -e
@@ -16,14 +17,15 @@ echo -e "${YELLOW}Activating Conda Environment...${NC}"
 eval "$(conda shell.bash hook)"
 ENV_NAME=monktorchenv
 if ! conda info --envs | grep -q "$ENV_NAME"; then
+  echo -e "${YELLOW}Creating Conda Environment: $ENV_NAME${NC}"
   conda create -y -n $ENV_NAME python=3.10
 fi
 conda activate $ENV_NAME
 
 # Dependencies
 echo -e "${YELLOW}Installing dependencies...${NC}"
-conda install -y numpy music21
-pip install torch torchvision torchaudio matplotlib tqdm
+conda install -y numpy
+pip install torch torchvision torchaudio music21 matplotlib tqdm
 
 # Directory setup
 mkdir -p ./data ./jazz_and_stuff
@@ -34,8 +36,8 @@ nvidia-smi
 
 # Train or Generate
 echo -e "${PURPLE}Select Action:${NC}"
-echo "1. Train Transformer (PyTorch Multi-GPU)"
-echo "2. Generate Music (PyTorch Single-GPU)"
+echo "1. Train Transformer (Multi-GPU)"
+echo "2. Generate Music (Single-GPU)"
 echo "3. Train and Generate"
 echo "4. Exit"
 read -p "Enter your choice: " choice
@@ -58,3 +60,4 @@ else
 fi
 
 echo -e "${PURPLE}================== Done ==================${NC}"
+
