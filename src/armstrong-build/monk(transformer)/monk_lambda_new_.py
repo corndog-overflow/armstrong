@@ -152,16 +152,23 @@ def reinforce_update(model, sequences, rewards, optimizer):
     with tf.GradientTape() as tape:
         loss = 0.0
         for seq, reward in zip(sequences, rewards):
-            input_seq = seq[:-1][-100:]
-            target_seq = seq[1:][-100:]
+            input_seq = seq[:-1][-100:]  
+            target_token = seq[-1]      
+
+            # logits: [1, vocab_size]
             logits = model(np.array([input_seq]), training=True)[0]
-            neg_logprobs = tf.keras.losses.sparse_categorical_crossentropy(
-                target_seq, logits, from_logits=False
+
+            # 计算对 target_token 的 loss
+            neg_logprob = tf.keras.losses.sparse_categorical_crossentropy(
+                [target_token], [logits], from_logits=False
             )
-            loss += tf.reduce_mean(neg_logprobs) * (1.0 - reward)
+            loss += neg_logprob * (1.0 - reward)
+
         loss /= len(sequences)
+
     grads = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
 
 def train_with_rl(model, network_input, network_output, token_to_int, epochs=30, rl_interval=3):
     optimizer = Adam(learning_rate=0.0001)
