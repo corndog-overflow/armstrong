@@ -34,7 +34,7 @@ sudo docker run --gpus all -it \
     cd /workspace && \
     pip install --upgrade pip && \
     pip install music21 matplotlib tqdm && \
-    bash monk_lambda_new_.sh
+    bash monk_lambda_new_.sh"
 
 # 5. 结束
 echo -e "${PURPLE}================ Monk Docker Process Done ================${NC}"
