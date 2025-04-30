@@ -24,7 +24,7 @@ echo -e "${YELLOW}Pulling TensorFlow 2.15 GPU Docker image...${NC}"
 sudo docker pull tensorflow/tensorflow:2.15.0-gpu
 
 # 3. 定义本地代码路径（改成你的路径！）
-LOCAL_PROJECT_PATH="/home/ubuntu/armstrong/armstrong-build/monk(transformer)"
+LOCAL_PROJECT_PATH="/home/ubuntu/armstrong/src/armstrong-build/monk(transformer)"
 
 # 4. 启动Docker容器并挂载代码
 echo -e "${YELLOW}Starting Docker container...${NC}"
