@@ -210,7 +210,7 @@ def train_network():
     print(f"[INFO] Detected {gpu_count} GPU(s), using batch size = {batch_size}")
     model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab, embed_dim=256, num_heads=8, ff_dim=512, num_layers=3)
     print("\nStarting supervised training...")
-    model.fit(network_input, network_output, epochs=300, batch_size=batch_size)
+    model.fit(network_input, network_output, epochs=3, batch_size=batch_size)
     print("\nStarting RL fine-tuning...")
     train_with_rl(model, network_input, network_output, token_to_int, epochs=30, rl_interval=3)
 
