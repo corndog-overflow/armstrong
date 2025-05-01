@@ -217,16 +217,22 @@ def create_midi(sequence, idx, int_to_token):
         pitch_part, dur_part = token_str.split('_')
         dur = float(Fraction(dur_part))
         if '.' in pitch_part:
-            notes = [note.Note(int(p)) for p in pitch_part.split('.')]
-            new_chord = chord.Chord(notes)
-            new_chord.duration = duration.Duration(dur)
-            new_chord.offset = offset
-            output_notes.append(new_chord)
+            try:
+                notes = [note.Note(int(p)) for p in pitch_part.split('.')]
+                new_chord = chord.Chord(notes)
+                new_chord.duration = duration.Duration(dur)
+                new_chord.offset = offset
+                output_notes.append(new_chord)
+            except Exception as e:
+                print(f"[WARNING] Skipped invalid chord '{pitch_part}': {e}")
         else:
-            new_note = note.Note(pitch_part)
-            new_note.duration = duration.Duration(dur)
-            new_note.offset = offset
-            output_notes.append(new_note)
+            try:
+                new_note = note.Note(pitch_part)
+                new_note.duration = duration.Duration(dur)
+                new_note.offset = offset
+                output_notes.append(new_note)
+            except Exception as e:
+                print(f"[WARNING] Skipped invalid note '{pitch_part}': {e}")
         offset += dur
     midi_stream = stream.Stream(output_notes)
     midi_stream.write('midi', fp=f'./outputs/jazz_generated_{idx}.mid')
