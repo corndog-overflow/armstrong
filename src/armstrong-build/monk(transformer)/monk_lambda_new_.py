@@ -14,7 +14,6 @@ import random
 
 np.random.seed(42)
 
-# ==================== DATA PROCESSING ====================
 def get_note_rhythm_tokens():
     print("[INFO] Extracting pitch-duration tokens...")
     tokens = []
@@ -56,7 +55,6 @@ def prepare_sequences(tokens, n_vocab, sequence_length=100):
     network_output = to_categorical(network_output, num_classes=n_vocab)
     return network_input, network_output, token_to_int, pitchnames
 
-# ==================== REWARD FUNCTIONS ====================
 def jazz_chord_reward(token):
     if '_' not in token:
         return 0.0
@@ -111,7 +109,6 @@ def compute_reward(sequence, int_to_token):
     rhythm_r = rhythm_reward(tokens)
     return (chord_r * 0.4) + (pitch_r * 0.4) + (rhythm_r * 0.2)
 
-# ==================== MODEL ====================
 def positional_encoding(length, depth):
     depth = depth / 2
     positions = np.arange(length)[:, np.newaxis]
@@ -145,7 +142,6 @@ def create_transformer_model(seq_len, vocab_size, embed_dim=256, num_heads=4, ff
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy')
     return model
 
-# ==================== GENERATION ====================
 def generate_sequence_batch(model, seeds, length=50):
     sequences = [seed.copy() for seed in seeds]
     for _ in range(length):
@@ -156,7 +152,6 @@ def generate_sequence_batch(model, seeds, length=50):
             sequences[i].append(next_token)
     return sequences
 
-# ==================== RL TRAINING ====================
 @tf.function(reduce_retracing=True)
 def _rl_step(model, input_tensor, target_tensor, reward_tensor, optimizer):
     with tf.GradientTape() as tape:
@@ -189,6 +184,8 @@ def train_with_rl(model, network_input, network_output, token_to_int, epochs=30,
     base_seq_count = 4 * gpu_count
     print(f"[INFO] RL Base Sequences Per Epoch: {base_seq_count} (using {gpu_count} GPU(s))")
 
+    best_reward = -float("inf")
+
     for epoch in range(epochs):
         print(f"\nEpoch {epoch + 1}/{epochs}")
         model.fit(network_input, network_output, batch_size=64 * gpu_count, verbose=1)
@@ -201,10 +198,15 @@ def train_with_rl(model, network_input, network_output, token_to_int, epochs=30,
             rewards = [compute_reward(seq, int_to_token) for seq in sequences]
             avg_reward = np.mean(rewards)
             print(f"Average reward: {avg_reward:.3f}")
+
             reinforce_update(model, sequences, rewards, optimizer)
-            if avg_reward > 0.6:
-                model.save_weights(f"./weights/rl_best_{avg_reward:.3f}.h5")
-# ==================== MIDI EXPORT & INFERENCE ====================
+
+            if avg_reward > best_reward:
+                best_reward = avg_reward
+                os.makedirs('./weights', exist_ok=True)
+                model.save_weights(f"./weights/rl_best.h5")
+                print(f"[INFO] New best model saved with reward {best_reward:.3f}")
+
 def create_midi(sequence, idx, int_to_token):
     offset = 0
     output_notes = []
@@ -237,13 +239,19 @@ def generate_music():
     int_to_token = {v: k for k, v in token_to_int.items()}
 
     model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab)
-    model.summary() 
-    weight_files = glob.glob("./weights/rl_best_*.h5")
-    if weight_files:
-        model.load_weights(sorted(weight_files)[-1])
-        print(f"Loaded weights: {weight_files[-1]}")
+    model.summary()
+
+    weight_path = "./weights/rl_best.h5"
+    if os.path.exists(weight_path):
+        model.load_weights(weight_path)
+        print(f"[INFO] Loaded best RL weights: {weight_path}")
     else:
-        model.load_weights(sorted(glob.glob("./weights/*.h5"))[-1])
+        fallback_weights = sorted(glob.glob("./weights/*.h5"))
+        if fallback_weights:
+            model.load_weights(fallback_weights[-1])
+            print(f"[INFO] Loaded fallback weights: {fallback_weights[-1]}")
+        else:
+            raise FileNotFoundError("[ERROR] No weight files found in ./weights/. Please run training first.")
 
     os.makedirs('./outputs', exist_ok=True)
     for i in range(3):
@@ -252,24 +260,34 @@ def generate_music():
         generated = generate_sequence_batch(model, [seed], length=200)[0]
         create_midi(generated, i, int_to_token)
 
-# ==================== ENTRY ====================
 def main():
     parser = argparse.ArgumentParser(description="Jazz Music Transformer with RL")
     parser.add_argument('--mode', choices=['train', 'generate'], required=True)
     args = parser.parse_args()
+
     if args.mode == 'train':
         tokens = get_note_rhythm_tokens()
         n_vocab = len(set(tokens))
         network_input, network_output, token_to_int, _ = prepare_sequences(tokens, n_vocab)
+
         gpus = tf.config.list_physical_devices('GPU')
         gpu_count = len(gpus) if gpus else 1
         batch_size = 64 * gpu_count
         print(f"[INFO] Detected {gpu_count} GPU(s), using batch size = {batch_size}")
-        model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab, embed_dim=256, num_heads=8, ff_dim=512, num_layers=3)
-        print("\nStarting supervised training...")
+
+        model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab,
+                                         embed_dim=256, num_heads=8, ff_dim=512, num_layers=3)
+
+        print("\n[INFO] Starting supervised training...")
         model.fit(network_input, network_output, epochs=300, batch_size=batch_size)
-        print("\nStarting RL fine-tuning...")
+
+        os.makedirs('./weights', exist_ok=True)
+        model.save_weights("./weights/final_supervised.h5")
+        print("[INFO] Saved final supervised model to ./weights/final_supervised.h5")
+
+        print("\n[INFO] Starting RL fine-tuning...")
         train_with_rl(model, network_input, network_output, token_to_int, epochs=30, rl_interval=3)
+
     elif args.mode == 'generate':
         generate_music()
 
