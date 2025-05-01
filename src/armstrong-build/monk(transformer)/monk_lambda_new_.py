@@ -237,6 +237,7 @@ def generate_music():
     int_to_token = {v: k for k, v in token_to_int.items()}
 
     model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab)
+    model.summary() 
     weight_files = glob.glob("./weights/rl_best_*.h5")
     if weight_files:
         model.load_weights(sorted(weight_files)[-1])
