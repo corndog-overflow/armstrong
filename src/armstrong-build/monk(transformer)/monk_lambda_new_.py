@@ -40,9 +40,20 @@ def get_note_rhythm_tokens():
             print(f"Error processing {file}: {e}")
             continue
 
-    with open('./data/tokens', 'wb') as f:
-        pickle.dump(tokens, f)
+    return tokens
 
+def load_or_generate_tokens():
+    fixed_token_path = './data/fixed_tokens.pkl'
+    if os.path.exists(fixed_token_path):
+        print("[INFO] Loading fixed tokens from disk...")
+        with open(fixed_token_path, 'rb') as f:
+            tokens = pickle.load(f)
+    else:
+        print("[INFO] Generating new tokens and saving to disk...")
+        tokens = get_note_rhythm_tokens()
+        os.makedirs('./data', exist_ok=True)
+        with open(fixed_token_path, 'wb') as f:
+            pickle.dump(tokens, f)
     return tokens
 
 def prepare_sequences(tokens, n_vocab, sequence_length=100):
@@ -139,8 +150,7 @@ def create_midi(sequence, idx, int_to_token):
     midi_stream.write('midi', fp=f'./outputs/jazz_generated_{idx}.mid')
 
 def generate_music():
-    with open('./data/tokens', 'rb') as f:
-        tokens = pickle.load(f)
+    tokens = load_or_generate_tokens()
     n_vocab = len(set(tokens))
     network_input, _, token_to_int, pitchnames = prepare_sequences(tokens, n_vocab)
     int_to_token = {v: k for k, v in token_to_int.items()}
@@ -178,7 +188,7 @@ def main():
     args = parser.parse_args()
 
     if args.mode == 'train':
-        tokens = get_note_rhythm_tokens()
+        tokens = load_or_generate_tokens()
         n_vocab = len(set(tokens))
         network_input, network_output, token_to_int, _ = prepare_sequences(tokens, n_vocab)
 
@@ -202,4 +212,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
