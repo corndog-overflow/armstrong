@@ -34,7 +34,7 @@ def get_note_rhythm_tokens():
                 if isinstance(element, note.Note):
                     tokens.append(f"{element.pitch}_{dur}")
                 elif isinstance(element, chord.Chord):
-                    chord_token = '.'.join(str(n.midi) for n in element.notes)
+                    chord_token = '.'.join(str(p.midi) for p in element.pitches)
                     tokens.append(f"{chord_token}_{dur}")
         except Exception as e:
             print(f"Error processing {file}: {e}")
