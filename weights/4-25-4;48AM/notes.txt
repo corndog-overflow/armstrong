@@ -1,0 +1,4 @@
+added residual connection
+brought relu back
+adam
+??

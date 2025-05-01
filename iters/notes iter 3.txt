@@ -1,0 +1,15 @@
+still repition
+not as many rests
+
+needs variable note durations
+how to get out of loops?
+
+added residual.
+
+
+trying for iter 4:
+
+
+increase dropout
+larger dataset
+adding variable durations
