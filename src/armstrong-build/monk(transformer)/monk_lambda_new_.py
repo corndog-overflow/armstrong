@@ -201,7 +201,7 @@ def main():
                                          embed_dim=256, num_heads=8, ff_dim=512, num_layers=3)
 
         print("\n[INFO] Starting supervised training...")
-        model.fit(network_input, network_output, epochs=300, batch_size=batch_size)
+        model.fit(network_input, network_output, epochs=3, batch_size=batch_size)
 
         os.makedirs('./weights', exist_ok=True)
         model.save_weights("./weights/final_supervised.h5")
