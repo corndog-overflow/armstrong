@@ -238,7 +238,12 @@ def generate_music():
     network_input, _, token_to_int, pitchnames = prepare_sequences(tokens, n_vocab)
     int_to_token = {v: k for k, v in token_to_int.items()}
 
-    model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab)
+    model = create_transformer_model(seq_len=network_input.shape[1],
+                                     vocab_size=n_vocab,
+                                     embed_dim=256,
+                                     num_heads=8,
+                                     ff_dim=512,
+                                     num_layers=3)
     model.summary()
 
     weight_path = "./weights/rl_best.h5"
