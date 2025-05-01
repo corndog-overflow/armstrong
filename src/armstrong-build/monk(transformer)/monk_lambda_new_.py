@@ -149,25 +149,29 @@ def generate_sequence(model, seed_input, length=50, temperature=0.8):
     return sequence
 
 def reinforce_update(model, sequences, rewards, optimizer):
+    input_seqs = []
+    target_tokens = []
+
+    for seq in sequences:
+        input_seq = seq[:-1][-100:]
+        target_token = seq[-1]
+        input_seqs.append(input_seq)
+        target_tokens.append(target_token)
+
+    input_tensor = np.array(input_seqs)                  # Shape: (B, 100)
+    target_tensor = np.array(target_tokens)              # Shape: (B,)
+    reward_tensor = tf.convert_to_tensor(rewards)        # Shape: (B,)
+
     with tf.GradientTape() as tape:
-        loss = 0.0
-        for seq, reward in zip(sequences, rewards):
-            input_seq = seq[:-1][-100:]  
-            target_token = seq[-1]      
-
-            # logits: [1, vocab_size]
-            logits = model(np.array([input_seq]), training=True)[0]
-
-            # 计算对 target_token 的 loss
-            neg_logprob = tf.keras.losses.sparse_categorical_crossentropy(
-                [target_token], [logits], from_logits=False
-            )
-            loss += neg_logprob * (1.0 - reward)
-
-        loss /= len(sequences)
+        logits = model(input_tensor, training=True)      # Shape: (B, vocab_size)
+        neg_logprobs = tf.keras.losses.sparse_categorical_crossentropy(
+            target_tensor, logits, from_logits=False     # Shape: (B,)
+        )
+        loss = tf.reduce_mean(neg_logprobs * (1.0 - reward_tensor))  
 
     grads = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
 
 
 def train_with_rl(model, network_input, network_output, token_to_int, epochs=30, rl_interval=3):
