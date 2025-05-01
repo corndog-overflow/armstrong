@@ -14,6 +14,7 @@ import random
 
 np.random.seed(42)
 
+# ==================== DATA PROCESSING ====================
 def get_note_rhythm_tokens():
     print("[INFO] Extracting pitch-duration tokens...")
     tokens = []
@@ -54,6 +55,8 @@ def prepare_sequences(tokens, n_vocab, sequence_length=100):
     network_input = np.array(network_input)
     network_output = to_categorical(network_output, num_classes=n_vocab)
     return network_input, network_output, token_to_int, pitchnames
+
+# ==================== REWARD FUNCTIONS ====================
 def jazz_chord_reward(token):
     if '_' not in token:
         return 0.0
@@ -108,6 +111,7 @@ def compute_reward(sequence, int_to_token):
     rhythm_r = rhythm_reward(tokens)
     return (chord_r * 0.4) + (pitch_r * 0.4) + (rhythm_r * 0.2)
 
+# ==================== MODEL ====================
 def positional_encoding(length, depth):
     depth = depth / 2
     positions = np.arange(length)[:, np.newaxis]
@@ -140,103 +144,67 @@ def create_transformer_model(seq_len, vocab_size, embed_dim=256, num_heads=4, ff
     model = Model(inputs=inputs, outputs=outputs)
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy')
     return model
-def generate_sequence(model, seed_input, length=50, temperature=0.8):
-    sequence = seed_input.copy()
+
+# ==================== GENERATION ====================
+def generate_sequence_batch(model, seeds, length=50):
+    sequences = [seed.copy() for seed in seeds]
     for _ in range(length):
-        preds = model.predict(np.array([sequence[-100:]]), verbose=0)[0]
-        next_token = np.random.choice(len(preds), p=preds)
-        sequence.append(next_token)
-    return sequence
+        input_batch = np.array([seq[-100:] for seq in sequences])
+        preds_batch = model.predict(input_batch, verbose=0)
+        for i, preds in enumerate(preds_batch):
+            next_token = np.random.choice(len(preds), p=preds)
+            sequences[i].append(next_token)
+    return sequences
+
+# ==================== RL TRAINING ====================
+@tf.function(reduce_retracing=True)
+def _rl_step(model, input_tensor, target_tensor, reward_tensor, optimizer):
+    with tf.GradientTape() as tape:
+        logits = model(input_tensor, training=True)
+        neg_logprobs = tf.keras.losses.sparse_categorical_crossentropy(
+            target_tensor, logits, from_logits=False
+        )
+        loss = tf.reduce_mean(neg_logprobs * (1.0 - reward_tensor))
+    grads = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
 def reinforce_update(model, sequences, rewards, optimizer):
     input_seqs = []
     target_tokens = []
-
     for seq in sequences:
         input_seq = seq[:-1][-100:]
         target_token = seq[-1]
         input_seqs.append(input_seq)
         target_tokens.append(target_token)
+    input_tensor = tf.convert_to_tensor(input_seqs, dtype=tf.int32)
+    target_tensor = tf.convert_to_tensor(target_tokens, dtype=tf.int32)
+    reward_tensor = tf.convert_to_tensor(rewards, dtype=tf.float32)
+    _rl_step(model, input_tensor, target_tensor, reward_tensor, optimizer)
 
-    input_tensor = np.array(input_seqs)                  # Shape: (B, 100)
-    target_tensor = np.array(target_tokens)              # Shape: (B,)
-    reward_tensor = tf.convert_to_tensor(rewards)        # Shape: (B,)
-
-    with tf.GradientTape() as tape:
-        logits = model(input_tensor, training=True)      # Shape: (B, vocab_size)
-        neg_logprobs = tf.keras.losses.sparse_categorical_crossentropy(
-            target_tensor, logits, from_logits=False     # Shape: (B,)
-        )
-        loss = tf.reduce_mean(neg_logprobs * (1.0 - reward_tensor))  
-
-    grads = tape.gradient(loss, model.trainable_variables)
-    optimizer.apply_gradients(zip(grads, model.trainable_variables))
-
-
-
-def train_with_rl(model, network_input, network_output, token_to_int, epochs=30, rl_interval=3):
+def train_with_rl(model, network_input, network_output, token_to_int, epochs=30, rl_interval=5):
     optimizer = Adam(learning_rate=0.0001)
     int_to_token = {v: k for k, v in token_to_int.items()}
     gpus = tf.config.list_physical_devices('GPU')
     gpu_count = len(gpus) if gpus else 1
-    seq_per_epoch = 16 * gpu_count
-    print(f"[INFO] RL Training with {seq_per_epoch} sequences per update (using {gpu_count} GPU(s))")
+    base_seq_count = 4 * gpu_count
+    print(f"[INFO] RL Base Sequences Per Epoch: {base_seq_count} (using {gpu_count} GPU(s))")
 
     for epoch in range(epochs):
         print(f"\nEpoch {epoch + 1}/{epochs}")
         model.fit(network_input, network_output, batch_size=64 * gpu_count, verbose=1)
 
         if epoch % rl_interval == 0:
-            print("RL phase - Generating sequences...")
-            sequences = []
-            rewards = []
-            for _ in range(seq_per_epoch):
-                seed_idx = np.random.randint(0, len(network_input) - 1)
-                seed = list(network_input[seed_idx])
-                seq = generate_sequence(model, seed, length=50)
-                sequences.append(seq)
-                rewards.append(compute_reward(seq, int_to_token))
-
+            current_seq_count = base_seq_count + (epoch // 5) * gpu_count
+            print(f"RL phase - Generating {current_seq_count} sequences...")
+            seeds = [list(network_input[np.random.randint(0, len(network_input))]) for _ in range(current_seq_count)]
+            sequences = generate_sequence_batch(model, seeds, length=30 + (epoch // 5) * 10)
+            rewards = [compute_reward(seq, int_to_token) for seq in sequences]
             avg_reward = np.mean(rewards)
             print(f"Average reward: {avg_reward:.3f}")
             reinforce_update(model, sequences, rewards, optimizer)
             if avg_reward > 0.6:
                 model.save_weights(f"./weights/rl_best_{avg_reward:.3f}.h5")
-def train_network():
-    os.makedirs('./data', exist_ok=True)
-    os.makedirs('./weights', exist_ok=True)
-    tokens = get_note_rhythm_tokens()
-    n_vocab = len(set(tokens))
-    network_input, network_output, token_to_int, _ = prepare_sequences(tokens, n_vocab)
-    gpus = tf.config.list_physical_devices('GPU')
-    gpu_count = len(gpus) if gpus else 1
-    batch_size = 64 * gpu_count
-    print(f"[INFO] Detected {gpu_count} GPU(s), using batch size = {batch_size}")
-    model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab, embed_dim=256, num_heads=8, ff_dim=512, num_layers=3)
-    print("\nStarting supervised training...")
-    model.fit(network_input, network_output, epochs=300, batch_size=batch_size)
-    print("\nStarting RL fine-tuning...")
-    train_with_rl(model, network_input, network_output, token_to_int, epochs=30, rl_interval=3)
-
-def generate_music():
-    with open('./data/tokens', 'rb') as f:
-        tokens = pickle.load(f)
-    n_vocab = len(set(tokens))
-    network_input, _, token_to_int, pitchnames = prepare_sequences(tokens, n_vocab)
-    int_to_token = {v: k for k, v in token_to_int.items()}
-    model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab)
-    weight_files = glob.glob("./weights/rl_best_*.h5")
-    if weight_files:
-        model.load_weights(sorted(weight_files)[-1])
-        print(f"Loaded weights: {weight_files[-1]}")
-    else:
-        model.load_weights(sorted(glob.glob("./weights/*.h5"))[-1])
-    os.makedirs('./outputs', exist_ok=True)
-    for i in range(3):
-        seed_idx = np.random.randint(0, len(network_input) - 1)
-        generated = generate_sequence(model, list(network_input[seed_idx]), length=200)
-        create_midi(generated, i, int_to_token)
-
+# ==================== MIDI EXPORT & INFERENCE ====================
 def create_midi(sequence, idx, int_to_token):
     offset = 0
     output_notes = []
@@ -261,14 +229,49 @@ def create_midi(sequence, idx, int_to_token):
     midi_stream = stream.Stream(output_notes)
     midi_stream.write('midi', fp=f'./outputs/jazz_generated_{idx}.mid')
 
+def generate_music():
+    with open('./data/tokens', 'rb') as f:
+        tokens = pickle.load(f)
+    n_vocab = len(set(tokens))
+    network_input, _, token_to_int, pitchnames = prepare_sequences(tokens, n_vocab)
+    int_to_token = {v: k for k, v in token_to_int.items()}
+
+    model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab)
+    weight_files = glob.glob("./weights/rl_best_*.h5")
+    if weight_files:
+        model.load_weights(sorted(weight_files)[-1])
+        print(f"Loaded weights: {weight_files[-1]}")
+    else:
+        model.load_weights(sorted(glob.glob("./weights/*.h5"))[-1])
+
+    os.makedirs('./outputs', exist_ok=True)
+    for i in range(3):
+        seed_idx = np.random.randint(0, len(network_input) - 1)
+        seed = list(network_input[seed_idx])
+        generated = generate_sequence_batch(model, [seed], length=200)[0]
+        create_midi(generated, i, int_to_token)
+
+# ==================== ENTRY ====================
 def main():
     parser = argparse.ArgumentParser(description="Jazz Music Transformer with RL")
     parser.add_argument('--mode', choices=['train', 'generate'], required=True)
     args = parser.parse_args()
     if args.mode == 'train':
-        train_network()
+        tokens = get_note_rhythm_tokens()
+        n_vocab = len(set(tokens))
+        network_input, network_output, token_to_int, _ = prepare_sequences(tokens, n_vocab)
+        gpus = tf.config.list_physical_devices('GPU')
+        gpu_count = len(gpus) if gpus else 1
+        batch_size = 64 * gpu_count
+        print(f"[INFO] Detected {gpu_count} GPU(s), using batch size = {batch_size}")
+        model = create_transformer_model(seq_len=network_input.shape[1], vocab_size=n_vocab, embed_dim=256, num_heads=8, ff_dim=512, num_layers=3)
+        print("\nStarting supervised training...")
+        model.fit(network_input, network_output, epochs=3, batch_size=batch_size)
+        print("\nStarting RL fine-tuning...")
+        train_with_rl(model, network_input, network_output, token_to_int, epochs=30, rl_interval=3)
     elif args.mode == 'generate':
         generate_music()
 
 if __name__ == '__main__':
     main()
+
