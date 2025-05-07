@@ -63,6 +63,7 @@ songbird-main/
 You can run the project using any Ubuntu terminal.
 
 1. Make sure `jazz_and_stuff.zip` is unzipped in the the same directory you are running the model (for training and/or for inference)
+2. A notes file, with all possible notes are required. You may generate these notes by running the model to train and killing the process once the note data is generated.
 3. Run the model with supervised or RL-based Transformer by modifying the script:
 
 ```bash
