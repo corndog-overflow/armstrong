@@ -83,13 +83,14 @@ bash arm.sh         # Train the model
 bash gen.sh         # Generate jazz samples
 ```
 
-## Contributions
+Contributions
 
-| Name          | Task                                                                                        | Files                               | Lines     |
-| ------------- | ------------------------------------------------------------------------------------------- | ----------------------------------- | --------- |
-| Sadman Kabir  | LSTM + Transformer v1, full tokenization, REINFORCE fine-tuning                             | ModelA.py                           | \~300     |
-| Chen Han Lin  | Transformer v1, preprocessing, dataset curation, training                                   | Processdata.py, ModelB.py           | \~400     |
-| Xushuai Zhang | Trained all models, implemented monk Transformer (RL+Torch), wrote shell & PyTorch versions | monk\_lambda.py, monk\_torch.py, sh | \~300–400 |
+| Name          | Task                                                                                                                                                     | File Names                                                                                 | No. Lines of Code |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------- |
+| Sadman Kabir  | - Implemented Songbird_LSTM. <br> - Implemented the first iteration of the Transformer Model. <br> - Added full Tokenization support for chords, rests, and varying note duration combinations. <br> - Implemented REINFORCE for RL fine-tuning. | - armstrong_tensorflow.ipynb <br> - train_armstrong.py <br> - gen_armstrong.py <br> - .sh scripts for the above <br> - monk_lambda_new_.py <br> - monk.py <br> - monk.sh | ~800              |
+| Chen Han Lin  | - Developed first iteration of Songbird_Transformer <br> - Developed preprocessing system for dataset <br> - Curated dataset files to expand size <br> - Trained Transformer models | - monk_torch.py <br> - monk_torch.sh <br> - Trained all torch-based models <br> - Generated outputs for torch models | ~600              |
+| Xushuai Zhang | - Trained almost every model <br> - Contributed heavily to the RL-based Transformer model named *monk* <br> - Wrote PyTorch versions of Transformer for parallel training | - monk_lambda.py <br> - monk_torch_new_.py <br> - Related .sh file <br> - Trained nearly every model iteration | ~500              |
+
 
 ## GitHub
 
