@@ -62,8 +62,8 @@ songbird-main/
 
 You can run the project using any Ubuntu terminal.
 
-1. Make sure `jazz_and_stuff.zip` is unzipped in the correct directory.
-2. Run the model with supervised or RL-based Transformer by modifying the script:
+1. Make sure `jazz_and_stuff.zip` is unzipped in the the same directory you are running the model (for training and/or for inference)
+3. Run the model with supervised or RL-based Transformer by modifying the script:
 
 ```bash
 bash monk_docker.sh
