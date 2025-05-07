@@ -1,8 +1,0 @@
-updates: added rests, added a relu? 
-top 10 prob choices.
-
-
-
-adding to next: 
-
-skip connection, relu, adam, adding note durations maybe.
